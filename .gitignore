@@ -19,3 +19,6 @@ carteira_investimento_saci_*.xlsx
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# log da atualização automática
+atualizacao.log

@@ -30,5 +30,10 @@ dir.create("dados", showWarnings = FALSE)
 saveRDS(tci, "dados/carteira.rds")
 message(format(nrow(tci), big.mark = "."), " contratos gravados em dados/carteira.rds")
 
-rsconnect::writeManifest(appPrimaryDoc = "carteira_investimentos_mcid.Rmd")
+# lista só os arquivos que o painel precisa (sem .RData e outros arquivos locais)
+rsconnect::writeManifest(
+  appFiles = c("carteira_investimentos_mcid.Rmd", "app.css",
+               "logo-saci transparente.png", "dados/carteira.rds"),
+  appPrimaryDoc = "carteira_investimentos_mcid.Rmd"
+)
 message("manifest.json atualizado")
