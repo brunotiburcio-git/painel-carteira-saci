@@ -308,8 +308,17 @@ grafico_rosca <- function(df, categoria, tipo = c("valor", "qtd"), tema = "escur
 # ------------------------------------------------------------------
 # BASE DE DADOS
 # ------------------------------------------------------------------
-conexao <- dbConnect(odbc::odbc(),database = "corporativo","PostgreSQLCampinas",timeout = 10)
-tci <- dbGetQuery(conexao,"SELECT * FROM se_saci.view_mat_carteira_investimento WHERE bln_carteira_ativa_mcid = 'SIM'")
+# Se existir o retrato dos dados (gerado por atualizar_dados.R), o painel usa
+# o arquivo. É assim que ele roda no Posit Connect Cloud, que não alcança o
+# banco interno. Sem o arquivo, lê direto do banco, como antes.
+arquivo_dados <- "dados/carteira.rds"
+if (file.exists(arquivo_dados)) {
+  tci <- readRDS(arquivo_dados)
+} else {
+  conexao <- dbConnect(odbc::odbc(),database = "corporativo","PostgreSQLCampinas",timeout = 10)
+  tci <- dbGetQuery(conexao,"SELECT * FROM se_saci.view_mat_carteira_investimento WHERE bln_carteira_ativa_mcid = 'SIM'")
+  dbDisconnect(conexao)
+}
 
 # ------------------------------------------------------------------
 
