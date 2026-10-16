@@ -1,0 +1,467 @@
+/* =====================================================================
+   Painel Carteira de Investimento Integrada — padrão visual do SACI
+   Cores, fontes e componentes do app.css do sistema SACI (Tailwind),
+   adaptados para o flexdashboard (Bootstrap 3 / flatly).
+   Modo escuro por padrão; o modo claro é ligado pelo atributo
+   html[data-tema="claro"] (botões no fim da barra lateral).
+   ===================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+/* ---------- Cores do SACI (modo escuro = classe .dark do sistema) ---------- */
+:root {
+    --bg: #060606;               /* --background  hsl(0 0% 2.5%) */
+    --bg-elevated: #171717;      /* --card        hsl(0 0% 9%)   */
+    --bg-sidebar: #141414;       /* --sidebar     hsl(0 0% 8%)   */
+    --bg-input: #171717;
+    --bg-muted: #242424;         /* --muted       hsl(0 0% 14%)  */
+    --border: #292929;           /* --border      hsl(0 0% 16%)  */
+    --border-strong: #3a3a3a;
+    --text: #fafafa;             /* --foreground  */
+    --text-muted: #a3a3a3;       /* --muted-foreground hsl(0 0% 63.9%) */
+    --title: #fafafa;
+    --primary: #c71f37;          /* --color-saci-primary */
+    --primary-text: #ff4d6a;     /* --sidebar-accent-foreground (vermelho legível no escuro) */
+    --primary-soft: #241317;     /* --nivel-3-fundo (escuro) */
+    --azul: #6ba3c9;             /* --color-saci-azul (escuro) */
+    --radius: 8px;               /* --radius 0.5rem */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --font: "Inter", "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+    --row-alt: rgba(255, 255, 255, 0.02);
+    --row-hover: rgba(255, 77, 106, 0.08);
+    --tag-ogu-bg: #242424;  --tag-ogu-fg: #fafafa;
+    --tag-fin-bg: #242424;  --tag-fin-fg: #fafafa;
+}
+
+/* ---------- Modo claro (:root do sistema) ---------- */
+html[data-tema="claro"] {
+    --bg: #f5f5f5;               /* --muted hsl(0 0% 96.1%): fundo da página atrás dos cards */
+    --bg-elevated: #ffffff;      /* --card */
+    --bg-sidebar: #fafafa;       /* --sidebar */
+    --bg-input: #ffffff;
+    --bg-muted: #f4f0ed;         /* --sidebar-accent / saci-accent */
+    --border: #ededed;           /* --border hsl(0 0% 92.8%) */
+    --border-strong: #d4d4d4;
+    --text: #0a0a0a;             /* --foreground hsl(0 0% 3.9%) */
+    --text-muted: #737373;       /* --muted-foreground hsl(0 0% 45.1%) */
+    --title: #0a0a0a;
+    --primary-text: #c71f37;
+    --primary-soft: #fbdde3;     /* --nivel-3-fundo */
+    --azul: #7a9bb8;             /* --color-saci-azul */
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --row-alt: rgba(0, 0, 0, 0.015);
+    --row-hover: rgba(199, 31, 55, 0.05);
+    --tag-ogu-bg: #edf2f6;  --tag-ogu-fg: #7a9bb8;
+    --tag-fin-bg: #fbdde3;  --tag-fin-fg: #c71f37;
+}
+
+/* O Bootstrap 3 (flatly) define html { font-size: 10px }; o SACI usa 16px.
+   O Bootstrap usa px no resto, então só os tamanhos em rem deste arquivo mudam. */
+html { font-size: 16px !important; }
+
+html, body {
+    background-color: var(--bg) !important;
+    color: var(--text);
+    font-family: var(--font);
+}
+body, .navbar, .selectize-input, .selectize-dropdown, .btn, table.dataTable { font-family: var(--font) !important; }
+.dashboard-page-wrapper, .dashboard-column, .dashboard-row,
+.section.level1, .section.level2, .tab-content {
+    background: transparent !important;
+}
+
+/* gráficos com rolagem vertical natural */
+.chart-stage-flex { overflow-y: visible !important; }
+
+/* ---------- Barra superior (cabeçalho do SACI) ---------- */
+.navbar, .navbar-inverse {
+    background: var(--bg-elevated) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border) !important;
+    box-shadow: none;
+}
+.navbar-brand, .navbar-inverse .navbar-brand {
+    font-size: 1rem !important;
+    line-height: 1.15 !important;
+    padding-top: 11px !important;     /* centraliza as duas linhas do título na barra */
+    padding-bottom: 11px !important;
+    font-weight: 600;
+    color: var(--primary-text) !important;   /* como o título "Consultar Contratos" do SACI */
+}
+.navbar-inverse .navbar-nav > li > a,
+.navbar .navbar-nav > li > a {
+    color: var(--text) !important;
+    font-size: 1rem;
+    font-weight: 500;
+    margin: 12px 3px 0;
+    padding: 6px 12px !important;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+}
+.navbar-inverse .navbar-nav > li > a:hover,
+.navbar .navbar-nav > li > a:hover { color: var(--primary-text) !important; background: var(--bg-muted) !important; }
+/* aba ativa como o item ativo do menu do SACI: texto vermelho em fundo realçado */
+.navbar-inverse .navbar-nav > .active > a,
+.navbar-inverse .navbar-nav > .active > a:hover,
+.navbar-inverse .navbar-nav > .active > a:focus,
+.navbar .navbar-nav > .active > a {
+    color: var(--primary-text) !important;
+    background: var(--bg-muted) !important;
+    font-weight: 600;
+}
+.navbar-inverse .navbar-toggle { border-color: var(--border-strong); }
+
+/* logo do SACI: as letras são pretas, então no modo escuro ganha um fundo claro */
+.navbar-logo img {
+    height: 36px;
+    width: auto;
+    margin: 7px 14px 0 4px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: #ffffff;
+}
+html[data-tema="claro"] .navbar-logo img { background: transparent; padding: 3px 0; }
+
+/* ---------- Barra lateral ---------- */
+.section.sidebar {
+    background: var(--bg-sidebar) !important;
+    border-right: 1px solid var(--border) !important;
+    color: var(--text);
+    padding: 14px 16px 24px !important;
+}
+/* rótulos dos filtros: .label-base do SACI (negrito), um pouco maiores */
+.section.sidebar .control-label,
+.section.sidebar label {
+    color: var(--text) !important;
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+/* clicar no título do filtro não abre a lista: só o campo de opções abre */
+.section.sidebar .control-label { pointer-events: none; cursor: default; }
+.section.sidebar .form-group { margin-bottom: 12px; }
+/* título "Filtros" como "Filtros Avançados" do SACI */
+.sidebar-titulo {
+    font-size: 1.15rem;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--title);
+    margin: 4px 0 14px;
+}
+.sidebar-rodape {
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ---------- Campos de seleção (.campo-padrao do SACI) ---------- */
+.selectize-input, .selectize-control.single .selectize-input,
+.selectize-control.single .selectize-input.input-active,
+.form-control {
+    background: var(--bg-input) !important;
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 6px !important;
+    color: var(--text) !important;
+    box-shadow: none !important;
+    font-size: 0.85rem;
+}
+.selectize-input > input { color: var(--text) !important; }
+.selectize-input.focus, .form-control:focus {
+    border-color: var(--text-muted) !important;
+    box-shadow: 0 0 0 1px var(--text-muted) !important;
+}
+.selectize-control.single .selectize-input:after { border-top-color: var(--text-muted) !important; }
+.selectize-dropdown {
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 6px;
+    color: var(--text) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 2000;
+}
+.selectize-dropdown .option { color: var(--text); }
+.selectize-dropdown .active, .selectize-dropdown .option:hover {
+    background: var(--bg-muted) !important;
+    color: var(--primary-text) !important;
+}
+.selectize-dropdown .selected { color: var(--primary-text) !important; font-weight: 600; }
+
+/* ---------- Botões (.botao-principal do SACI: vermelho sólido) ---------- */
+.btn-limpar, .tema-botoes button.ativo,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current,
+.dataTables_wrapper .dataTables_paginate .paginate_button.current:hover {
+    font-weight: 600;
+    color: #ffffff !important;
+    background: var(--primary) !important;
+    border: 1px solid var(--primary) !important;
+    border-radius: 6px !important;
+    transition: box-shadow 0.15s, transform 0.15s;
+}
+.btn-limpar:hover { box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2); transform: scale(1.02); }
+.btn-limpar { width: 100%; margin: 4px 0 6px; padding: 7px 10px; }
+
+/* botões secundários (como "Baixar PDF" / "Exportar" do SACI): contorno */
+.dt-buttons .dt-button, button.dt-button, div.dt-button {
+    color: var(--text) !important;
+    background: var(--bg-elevated) !important;
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 6px !important;
+    font-weight: 500;
+    box-shadow: none !important;
+}
+.dt-buttons .dt-button:hover, button.dt-button:hover { border-color: var(--text) !important; }
+
+.tema-botoes { display: flex; gap: 0.5rem; margin-top: 14px; }
+.tema-botoes button {
+    flex: 1; white-space: nowrap; padding: 0.45rem 0.4rem; border-radius: 6px; cursor: pointer; font-size: 0.9rem;
+    border: 1px solid var(--border-strong); background: var(--bg-elevated); color: var(--text);
+}
+.tema-botoes button:hover { border-color: var(--text); }
+
+/* ---------- Cards dos gráficos (cards do SACI: borda fina, sombra leve) ---------- */
+.chart-wrapper, .nav-tabs-custom, .chart-wrapper .chart-stage {
+    background: var(--bg-elevated) !important;
+    color: var(--text);
+}
+.chart-wrapper, .nav-tabs-custom {
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+.chart-title {
+    color: var(--title) !important;
+    background: transparent !important;
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    border-bottom: 1px solid var(--border) !important;
+    padding: 12px 16px 10px !important;
+}
+.chart-notes { color: var(--text-muted); background: transparent; border-top: 1px solid var(--border); }
+
+/* ---------- Abas internas ---------- */
+.nav-tabs-custom > .nav-tabs {
+    background: transparent !important;
+    border-bottom: 1px solid var(--border) !important;
+}
+.nav-tabs-custom > .nav-tabs > li > a {
+    color: var(--text-muted) !important;
+    font-size: 0.95rem;
+    font-weight: 500;
+    border: none !important;
+    background: transparent !important;
+}
+.nav-tabs-custom > .nav-tabs > li > a:hover { color: var(--text) !important; }
+.nav-tabs-custom > .nav-tabs > li { border-top: none !important; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.nav-tabs-custom > .nav-tabs > li.active { border-bottom-color: var(--primary) !important; }
+.nav-tabs-custom > .nav-tabs > li.active > a,
+.nav-tabs-custom > .nav-tabs > li.active > a:hover {
+    color: var(--primary-text) !important;
+    background: transparent !important;
+    font-weight: 600;
+}
+.nav-tabs-custom > .tab-content { background: var(--bg-elevated) !important; }
+
+/* abas Valor | Quantidade dentro de um card (Situação do contrato / do objeto) */
+.abas-grafico .nav-tabs {
+    border-bottom: 1px solid var(--border) !important;
+    margin: -2px 0 6px;
+}
+.abas-grafico .nav-tabs > li > a {
+    color: var(--text-muted) !important;
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    background: transparent !important;
+    border-radius: 0;
+    margin-bottom: -1px;
+}
+.abas-grafico .nav-tabs > li > a:hover { color: var(--text) !important; }
+.abas-grafico .nav-tabs > li.active > a,
+.abas-grafico .nav-tabs > li.active > a:hover,
+.abas-grafico .nav-tabs > li.active > a:focus {
+    color: var(--primary-text) !important;
+    border-bottom-color: var(--primary) !important;
+    font-weight: 600;
+}
+.abas-grafico .tab-content { background: transparent !important; }
+
+/* ---------- Filtros ativos (acima dos totalizadores, como no SACI) ---------- */
+.filtros-ativos {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 0 0 10px;
+    font-size: 0.75rem;
+}
+.filtros-ativos-rotulo { font-weight: 600; color: var(--text); margin-right: 2px; }
+.filtro-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border-strong);
+    background: var(--tag-ogu-bg);
+    color: var(--tag-ogu-fg);
+    white-space: nowrap;
+}
+.filtro-remover {
+    color: inherit !important;
+    text-decoration: none !important;
+    font-size: 0.85rem;
+    line-height: 1;
+    opacity: 0.7;
+}
+.filtro-remover:hover { opacity: 1; color: var(--primary-text) !important; }
+
+/* ---------- Totalizadores (idênticos ao quadro "Totalizadores" do SACI) ---------- */
+.totalizadores {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 8px;
+    padding: 2px 0 0;
+}
+.tot-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    padding: 9px 9px 8px;
+    min-width: 0;
+}
+html[data-tema="claro"] .tot-card { border-color: #e5e5e5; }
+.tot-titulo {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text);
+    opacity: 0.85;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.tot-valor {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--primary-text);
+    margin: 4px 0 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+}
+.tot-valor .tot-pct { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); margin-left: 2px; }
+.tot-linhas { display: flex; flex-direction: column; gap: 6px; }
+.tot-linha { display: flex; align-items: flex-start; gap: 8px; font-size: 0.72rem; color: var(--text); line-height: 1.2; }
+.tot-linha b { color: var(--title); font-weight: 600; }
+.tot-linha .tot-pct { color: var(--text-muted); margin-left: 2px; }
+.tot-sub { font-size: 0.64rem; color: var(--text-muted); }
+.tot-na { color: var(--text-muted); }
+.tot-tag {
+    flex: 0 0 auto;
+    font-size: 0.56rem;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 3px;
+    margin-top: 1px;
+}
+.tag-ogu { color: var(--tag-ogu-fg); background: var(--tag-ogu-bg); }
+.tag-fin { color: var(--tag-fin-fg); background: var(--tag-fin-bg); }
+/* notebooks (até ~1600 px): cards mais compactos e o % pode descer para a linha de baixo */
+@media (max-width: 1650px) {
+    .totalizadores { gap: 6px; }
+    .tot-card { padding: 8px 7px 6px; }
+    .tot-titulo { font-size: 0.62rem; }
+    .tot-valor { font-size: 1rem; white-space: normal; margin: 2px 0 6px; padding-bottom: 6px; }
+    .tot-valor .tot-pct { display: inline-block; margin-left: 0; }
+    .tot-linha { font-size: 0.7rem; gap: 5px; }
+    .tot-sub { font-size: 0.6rem; }
+    .tot-tag { font-size: 0.55rem; padding: 1px 4px; }
+}
+@media (max-width: 1200px) { .totalizadores { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (max-width: 760px)  { .totalizadores { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ---------- Gráficos plotly ---------- */
+.js-plotly-plot .plotly .modebar,
+.js-plotly-plot .plotly .modebar-group { background: transparent !important; }   /* botão de baixar imagem sem fundo */
+.js-plotly-plot .plotly .modebar-btn path { fill: var(--text-muted) !important; }
+.js-plotly-plot .plotly .modebar-btn:hover path { fill: var(--primary-text) !important; }
+.shiny-output-error-validation {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: 2rem 1rem;
+    text-align: center;
+}
+
+/* ---------- Tabela (DT) ---------- */
+.dataTables_wrapper, .dataTables_wrapper .dataTables_info,
+.dataTables_wrapper .dataTables_filter label,
+.dataTables_wrapper .dataTables_length label {
+    color: var(--text-muted) !important;
+    font-size: 0.85rem;
+}
+.dataTables_wrapper .dataTables_filter input,
+.dataTables_wrapper .dataTables_length select,
+table.dataTable thead input, .dt-filter input {
+    background: var(--bg-input) !important;
+    border: 1px solid var(--border-strong) !important;
+    border-radius: 6px;
+    color: var(--text) !important;
+}
+table.dataTable {
+    color: var(--text);
+    background: transparent !important;
+    border-color: var(--border) !important;
+    font-size: 0.82rem;
+}
+table.dataTable thead th, table.dataTable thead td {
+    background: var(--bg-muted) !important;
+    color: var(--title) !important;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border-strong) !important;
+}
+table.dataTable tbody tr, table.dataTable.stripe tbody tr.even,
+table.dataTable.display tbody tr.even { background-color: transparent !important; }
+table.dataTable.stripe tbody tr.odd, table.dataTable.display tbody tr.odd {
+    background-color: var(--row-alt) !important;
+}
+table.dataTable tbody tr > td { box-shadow: none !important; }
+table.dataTable.hover tbody tr:hover, table.dataTable.display tbody tr:hover {
+    background-color: var(--row-hover) !important;
+}
+table.dataTable.cell-border tbody th, table.dataTable.cell-border tbody td {
+    border-top: 1px solid var(--border) !important;
+    border-right: 1px solid var(--border) !important;
+}
+.dataTables_scrollBody { border-bottom: 1px solid var(--border) !important; }
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    color: var(--text-muted) !important;
+    border-radius: 6px !important;
+    border: 1px solid transparent !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    color: var(--text) !important;
+    background: var(--bg-muted) !important;
+    border: 1px solid var(--border-strong) !important;
+}
+.dt-filter { position: relative; }
+.clear-filter {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    cursor: pointer; color: var(--text-muted); font-size: 0.75rem;
+}
+.clear-filter:hover { color: var(--primary-text); }
+/* filtros numéricos do DT (slider) */
+.noUi-connect { background: var(--primary) !important; }
+.noUi-target { background: var(--bg-muted) !important; border-color: var(--border-strong) !important; box-shadow: none !important; }
+
+/* ---------- Barras de rolagem discretas ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

@@ -1,0 +1,21 @@
+# RStudio / R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# saídas geradas ao rodar o painel (Run Document)
+carteira_investimentos_mcid.html
+carteira_investimentos_mcid_files/
+*_cache/
+rsconnect/
+
+# exportações feitas pelo painel
+carteira_investimento_saci_*.csv
+carteira_investimento_saci_*.xlsx
+
+# sistema
+Thumbs.db
+desktop.ini
+.DS_Store

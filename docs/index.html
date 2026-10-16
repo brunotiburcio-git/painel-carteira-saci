@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carteira de Investimento Integrada - SACI</title>
+<meta name="description" content="Painel interativo da carteira de investimentos do MCID, em R (flexdashboard + shiny), no padrão visual do SACI: totalizadores OGU/FIN, filtros, gráficos e exportação.">
+<link rel="icon" href="img/logo-saci.png">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* paleta do SACI (app.css do sistema): vermelho #c71f37, cinzas neutros */
+  :root {
+    --bg: #f5f5f5; --card: #ffffff; --border: #ededed; --border-strong: #d4d4d4;
+    --text: #0a0a0a; --muted: #737373; --primary: #c71f37; --primary-text: #c71f37;
+    --soft: #fbdde3; --chip-bg: #edf2f6; --chip-fg: #7a9bb8;
+    --shadow: 0 1px 2px rgba(0,0,0,.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #060606; --card: #171717; --border: #292929; --border-strong: #3a3a3a;
+      --text: #fafafa; --muted: #a3a3a3; --primary-text: #ff4d6a;
+      --soft: #241317; --chip-bg: #242424; --chip-fg: #fafafa; --shadow: 0 1px 2px rgba(0,0,0,.4);
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: Inter, "Segoe UI", system-ui, sans-serif; line-height: 1.55; }
+  a { color: var(--primary-text); }
+  .topo { background: var(--card); border-bottom: 1px solid var(--border); }
+  .topo-in { max-width: 1120px; margin: 0 auto; padding: 14px 16px; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .topo img { height: 34px; background: #fff; border-radius: 6px; padding: 3px 6px; }
+  .topo .nome { font-weight: 600; color: var(--primary-text); line-height: 1.15; }
+  .topo nav { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+  .topo nav a { color: var(--text); text-decoration: none; padding: 6px 12px; border-radius: 6px; font-weight: 500; font-size: 15px; }
+  .topo nav a:hover { background: var(--chip-bg); color: var(--primary-text); }
+  main { max-width: 1120px; margin: 0 auto; padding: 28px 16px 56px; }
+  .hero { background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 28px; margin-bottom: 22px; }
+  .tag { display: inline-block; font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--chip-fg); background: var(--chip-bg); border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 8px; }
+  h1 { color: var(--primary-text); font-size: clamp(26px, 4vw, 36px); line-height: 1.15; margin: 14px 0 10px; }
+  .hero p { color: var(--muted); font-size: 17px; max-width: 760px; margin: 0 0 18px; }
+  .botoes { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn { display: inline-block; text-decoration: none; font-weight: 600; font-size: 15px; padding: 9px 16px; border-radius: 6px; border: 1px solid var(--primary); background: var(--primary); color: #fff; }
+  .btn.sec { background: var(--card); color: var(--text); border-color: var(--border-strong); }
+  .btn:hover { box-shadow: 0 4px 10px rgba(0,0,0,.15); }
+  .aviso { margin-top: 16px; font-size: 14px; color: var(--muted); border-left: 3px solid var(--primary); padding: 6px 12px; background: var(--soft); border-radius: 0 6px 6px 0; }
+  h2 { font-size: 20px; margin: 34px 0 12px; }
+  .print { background: var(--card); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); padding: 10px; margin: 0 0 8px; }
+  .print img { width: 100%; height: auto; display: block; border-radius: 6px; }
+  figcaption { color: var(--muted); font-size: 14px; margin: 6px 4px 18px; }
+  .grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .item { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: var(--shadow); }
+  .item b { display: block; margin-bottom: 4px; }
+  .item span { color: var(--muted); font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--chip-bg); font-size: 12px; text-transform: uppercase; }
+  code { font-size: 13px; background: var(--chip-bg); padding: 1px 5px; border-radius: 4px; }
+  .tabela-wrap { overflow-x: auto; }
+  pre { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 14px; overflow-x: auto; font-size: 13px; }
+  footer { max-width: 1120px; margin: 0 auto; padding: 0 16px 32px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header class="topo">
+  <div class="topo-in">
+    <img src="img/logo-saci.png" alt="SACI">
+    <span class="nome">Carteira de Investimento<br>Integrada - SACI</span>
+    <nav>
+      <a href="#prints">Telas</a>
+      <a href="#funcionalidades">Funcionalidades</a>
+      <a href="#regras">Regras</a>
+      <a href="#rodar">Como rodar</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <span class="tag">painel interativo · R + Shiny</span>
+    <h1>Carteira de Investimento Integrada - SACI</h1>
+    <p>Painel da carteira de investimentos do Ministério das Cidades, no padrão visual do SACI. Totalizadores com
+       detalhamento OGU/FIN (mesma regra do sistema), filtros, gráficos por situação, UF, região e tipo de
+       instrumento, e tabela de contratos com link para o SACI e exportação completa.</p>
+    <div class="botoes">
+      <a class="btn" href="https://github.com/brunotiburcio-git/painel-carteira-saci">Ver o código no GitHub</a>
+      <a class="btn sec" href="https://tiburciobruno.com.br/">Portfólio</a>
+    </div>
+    <div class="aviso">O painel consulta um banco interno (PostgreSQL via ODBC) e roda no RStudio, dentro da rede do
+      ministério. Esta página apresenta o projeto, com telas reais do painel.</div>
+  </section>
+
+  <h2 id="prints">Telas</h2>
+  <figure class="print"><img src="img/painel-claro.png" alt="Painel no modo claro: filtros, totalizadores e gráficos de situação" loading="lazy"></figure>
+  <figcaption>Modo claro (padrão): filtros na barra lateral, totalizadores OGU/FIN e situação do contrato e do objeto.</figcaption>
+
+  <figure class="print"><img src="img/totalizadores-filtros.png" alt="Totalizadores com filtros ativos Região Sul e Fonte OGU" loading="lazy"></figure>
+  <figcaption>Totalizadores com a lista de filtros ativos (cada filtro tem um "×" para removê-lo).</figcaption>
+
+  <figure class="print"><img src="img/painel-escuro.png" alt="Painel no modo escuro" loading="lazy"></figure>
+  <figcaption>Modo escuro, com as cores do tema escuro do SACI.</figcaption>
+
+  <figure class="print"><img src="img/graficos-uf.png" alt="Gráficos de valor por UF e por tipo de instrumento" loading="lazy"></figure>
+  <figcaption>Valor e quantidade por UF e por região, e por tipo de instrumento.</figcaption>
+
+  <figure class="print"><img src="img/tabela.png" alt="Tabela de contratos com o código como link para o SACI" loading="lazy"></figure>
+  <figcaption>Tabela de contratos: o <code>cod_tci</code> abre o contrato no SACI, e CSV/Excel exportam todos os contratos filtrados.</figcaption>
+
+  <h2 id="funcionalidades">Funcionalidades</h2>
+  <div class="grade">
+    <div class="item"><b>Totalizadores OGU/FIN</b><span>Instrumentos, investimento, repasse, empenhado, desembolsado, executado e municípios, com os mesmos valores do SACI.</span></div>
+    <div class="item"><b>Filtros ativos</b><span>Lista dos filtros aplicados acima dos totalizadores, com remoção individual.</span></div>
+    <div class="item"><b>Gráficos com abas</b><span>Situação do contrato e do objeto, com abas Valor | Quantidade.</span></div>
+    <div class="item"><b>PNG com filtros</b><span>O download do gráfico já traz o título, os filtros aplicados e a data da carga.</span></div>
+    <div class="item"><b>Exportação completa</b><span>CSV e Excel com todos os contratos filtrados; "Copiar" leva a página visível.</span></div>
+    <div class="item"><b>Link para o SACI</b><span>Cada <code>cod_tci</code> abre o contrato no sistema, em nova aba.</span></div>
+    <div class="item"><b>Modo claro e escuro</b><span>Claro por padrão; a escolha fica guardada no navegador.</span></div>
+    <div class="item"><b>11 filtros</b><span>Região, UF, carteira em andamento, fonte, tipo de instrumento, PAC, fase PAC, secretaria, tomador e situações.</span></div>
+  </div>
+
+  <h2 id="regras">Regras dos totalizadores</h2>
+  <div class="tabela-wrap">
+  <table>
+    <tr><th>Totalizador</th><th>Cálculo</th></tr>
+    <tr><td>Qtd. instrumentos</td><td>Contagem de contratos</td></tr>
+    <tr><td>Investimento</td><td>Soma de <code>vlr_investimento</code></td></tr>
+    <tr><td>Repasse</td><td>Soma de <code>vlr_repasse</code></td></tr>
+    <tr><td>Empenhado</td><td>Soma de <code>vlr_empenhado</code> (FIN: "Não se aplica"; % só no OGU)</td></tr>
+    <tr><td>Desembolsado</td><td>Soma de <code>vlr_desembolsado</code></td></tr>
+    <tr><td>Executado</td><td>OGU e demais fontes: <code>vlr_desbloqueado</code>; FIN: <code>vlr_desembolsado</code></td></tr>
+    <tr><td>Municípios principais</td><td><code>id_municipio</code> distintos, sem nulos</td></tr>
+  </table>
+  </div>
+  <p style="color:var(--muted);font-size:14px">Percentuais sobre o repasse do mesmo grupo, calculados sobre as somas e com uma casa decimal.
+     "X contrato(s)" conta só os contratos com valor maior que zero naquele indicador.</p>
+
+  <h2 id="rodar">Como rodar</h2>
+  <p>Requisitos: R 4.4+, RStudio e a fonte de dados ODBC <code>PostgreSQLCampinas</code> configurada no Windows.</p>
+<pre>install.packages(c("flexdashboard", "shiny", "dplyr", "plotly", "DT", "scales",
+                   "DBI", "odbc", "htmlwidgets", "readr", "writexl"))</pre>
+  <p>Abra <code>carteira_investimentos_mcid.Rmd</code> no RStudio e clique em <b>Run Document</b>.</p>
+</main>
+
+<footer>© 2026 Bruno Tiburcio · <a href="https://tiburciobruno.com.br/">tiburciobruno.com.br</a></footer>
+</body>
+</html>

@@ -1,0 +1,821 @@
+---
+title: "Carteira de Investimento Integrada - SACI"
+output:
+  flexdashboard::flex_dashboard:
+    logo: "logo-saci transparente.png"
+    orientation: rows
+    vertical_layout: scroll
+    theme: flatly
+    css: app.css
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(dplyr)
+library(plotly)
+library(DT)      # usado apenas na tabela detalhada de contratos
+library(scales)  # formatação de números e valores em R$
+library(DBI)
+
+# ------------------------------------------------------------------
+# PALETA (a mesma do app.css) E FUNÇÕES DE APOIO
+# ------------------------------------------------------------------
+
+# cores dos gráficos conforme o tema escolhido na barra lateral (paleta do SACI:
+# valor e quantidade no vermelho saci-primary)
+cores_tema <- function(tema = "escuro") {
+  if (identical(tema, "claro")) {
+    list(texto = "#0a0a0a", muted = "#737373", titulo = "#0a0a0a",
+         grade = "rgba(0, 0, 0, 0.06)", card = "#ffffff",
+         hover_bg = "#ffffff", hover_borda = "#d4d4d4",
+         valor = "#c71f37", qtd = "#c71f37")
+  } else {
+    list(texto = "#fafafa", muted = "#a3a3a3", titulo = "#fafafa",
+         grade = "rgba(255, 255, 255, 0.07)", card = "#171717",
+         hover_bg = "#171717", hover_borda = "#3a3a3a",
+         valor = "#e0384f", qtd = "#e0384f")
+  }
+}
+
+# cada região tem sempre a mesma cor, em qualquer gráfico (tons da paleta do SACI)
+cores_regiao <- c("SUDESTE" = "#c71f37", "NORDESTE" = "#7a9bb8", "SUL" = "#3f9b6e",
+                  "NORTE" = "#e8c468", "CENTRO-OESTE" = "#9fabbb")
+cores_extra  <- c("#e28d9d", "#155080", "#74c395", "#e9a85b", "#5b6472", "#a8c5dc")
+
+cor_da_regiao <- function(x) {
+  chave <- toupper(iconv(x, to = "ASCII//TRANSLIT"))
+  chave <- gsub("\\s*-\\s*|\\s+", "-", trimws(chave))
+  cor <- unname(cores_regiao[chave])
+  faltam <- is.na(cor)
+  cor[faltam] <- rep(cores_extra, length.out = sum(faltam))
+  cor
+}
+
+fmt_num <- function(x, acc = 1) {
+  label_number(accuracy = acc, big.mark = ".", decimal.mark = ",")(x)
+}
+fmt_reais <- function(x) paste0("R$ ", fmt_num(x, 0.01))
+
+# R$ 1,2 bi / R$ 350,4 mi / R$ 12,0 mil (acc = 0.01 dá duas casas: R$ 1,23 bi)
+fmt_reais_curto <- function(x, acc = 0.1) {
+  vapply(x, function(v) {
+    if (is.na(v)) return("–")
+    a <- abs(v)
+    if (a >= 1e9)      paste0("R$ ", fmt_num(v / 1e9, acc), " bi")
+    else if (a >= 1e6) paste0("R$ ", fmt_num(v / 1e6, acc), " mi")
+    else if (a >= 1e3) paste0("R$ ", fmt_num(v / 1e3, acc), " mil")
+    else               paste0("R$ ", fmt_num(v, 1))
+  }, character(1))
+}
+
+fmt_pct <- function(x) paste0(fmt_num(100 * x, 0.1), "%")
+
+sem_vazio <- function(x) ifelse(is.na(x) | x == "", "Não informado", as.character(x))
+
+# barra de ferramentas enxuta: só o botão de baixar imagem. O botão padrão do
+# plotly foi trocado por um próprio, que coloca no PNG o título do gráfico, os
+# filtros aplicados e a data da carga (função baixarGraficoComFiltros, no script abaixo)
+config_padrao <- function(p) {
+  config(p,
+    displayModeBar = TRUE,
+    modeBarButtonsToRemove = c(
+      "zoom2d", "pan2d", "select2d", "lasso2d",
+      "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d",
+      "hoverClosestCartesian", "hoverCompareCartesian", "toggleSpikelines",
+      "toImage"
+    ),
+    modeBarButtonsToAdd = list(list(
+      name  = "Baixar imagem (PNG) com os filtros aplicados",
+      icon  = htmlwidgets::JS("Plotly.Icons.camera"),
+      click = htmlwidgets::JS("function (gd) { baixarGraficoComFiltros(gd); }")
+    )),
+    displaylogo = FALSE
+  )
+}
+
+# fundo transparente, fontes claras e separadores brasileiros
+layout_padrao <- function(p, co, ...) {
+  layout(p,
+    paper_bgcolor = "rgba(0,0,0,0)",
+    plot_bgcolor  = "rgba(0,0,0,0)",
+    modebar       = list(bgcolor = "rgba(0,0,0,0)", color = co$muted, activecolor = co$valor),
+    separators    = ",.",
+    font = list(family = "Inter, Segoe UI, system-ui, sans-serif", color = co$texto, size = 12),
+    hoverlabel = list(bgcolor = co$hover_bg, bordercolor = co$hover_borda,
+                      font = list(color = co$texto, family = "Inter, Segoe UI, sans-serif")),
+    ...
+  )
+}
+
+# barras horizontais: tipo = "valor" (R$) ou "qtd" (quantidade de instrumentos);
+# altura em px é opcional (usada nos gráficos dentro das abas Valor | Quantidade)
+grafico_barras <- function(df, categoria, tipo = c("valor", "qtd"), tema = "escuro", altura = NULL) {
+  tipo <- match.arg(tipo)
+  co   <- cores_tema(tema)
+  validate(need(nrow(df) > 0, "Nenhum contrato para os filtros selecionados."))
+
+  cat  <- sem_vazio(df[[categoria]])
+  v    <- df[[tipo]]
+  ordem <- order(v)                       # maior barra no topo
+  cat <- cat[ordem]; v <- v[ordem]
+  pct <- if (sum(v) > 0) v / sum(v) else rep(0, length(v))
+
+  if (tipo == "valor") {
+    x      <- v / 1e6
+    rotulo <- fmt_reais_curto(v)
+    hover  <- paste0("<b>", cat, "</b><br>", fmt_reais(v), "<br>", fmt_pct(pct), " do total")
+    eixo   <- "Valor Gov. Federal (R$ milhões)"
+    cor    <- co$valor
+  } else {
+    x      <- v
+    rotulo <- fmt_num(v)
+    hover  <- paste0("<b>", cat, "</b><br>", fmt_num(v), " instrumentos<br>", fmt_pct(pct), " do total")
+    eixo   <- "Quantidade de instrumentos"
+    cor    <- co$qtd
+  }
+
+  plot_ly(
+    x = x, y = factor(cat, levels = unique(cat)),
+    type = "bar", orientation = "h", height = altura,
+    marker = list(color = cor, line = list(color = cor, width = 0)),
+    text = rotulo, textposition = "outside", cliponaxis = FALSE,
+    textfont = list(color = co$texto, size = 11),
+    hovertext = hover, hoverinfo = "text"
+  ) %>%
+    layout_padrao(co,
+      bargap = 0.25,
+      margin = list(l = 10, r = 20, t = 10, b = 45),
+      xaxis = list(title = list(text = eixo, font = list(color = co$muted, size = 11)),
+                   range = c(0, max(x, 0, na.rm = TRUE) * 1.25 + 1e-9),
+                   tickformat = ",.1~f", gridcolor = co$grade, zeroline = FALSE,
+                   tickfont = list(color = co$muted), fixedrange = TRUE),
+      yaxis = list(title = "", automargin = TRUE, tickfont = list(color = co$texto),
+                   fixedrange = TRUE)
+    ) %>%
+    config_padrao()
+}
+
+# rosca por região com total no centro
+grafico_rosca <- function(df, categoria, tipo = c("valor", "qtd"), tema = "escuro") {
+  tipo <- match.arg(tipo)
+  co   <- cores_tema(tema)
+  validate(need(nrow(df) > 0, "Nenhum contrato para os filtros selecionados."))
+
+  cat <- sem_vazio(df[[categoria]])
+  v   <- df[[tipo]]
+  if (tipo == "valor") {
+    hover <- paste0("<b>", cat, "</b><br>", fmt_reais(v))
+    total <- fmt_reais_curto(sum(v))
+    legenda_total <- "repasse total"
+  } else {
+    hover <- paste0("<b>", cat, "</b><br>", fmt_num(v), " instrumentos")
+    total <- fmt_num(sum(v))
+    legenda_total <- "instrumentos"
+  }
+
+  plot_ly(
+    labels = cat, values = v, type = "pie", hole = 0.62, sort = FALSE,
+    marker = list(colors = cor_da_regiao(cat), line = list(color = co$card, width = 3)),
+    textinfo = "label+percent", textposition = "outside",
+    textfont = list(color = co$texto, size = 12),
+    hovertext = hover, hoverinfo = "text+percent"
+  ) %>%
+    layout_padrao(co,
+      showlegend = FALSE,
+      margin = list(l = 30, r = 30, t = 40, b = 40),
+      annotations = list(list(
+        text = paste0("<b>", total, "</b><br><span style='font-size:11px'>", legenda_total, "</span>"),
+        x = 0.5, y = 0.5, xref = "paper", yref = "paper", showarrow = FALSE,
+        font = list(size = 20, color = co$titulo)
+      ))
+    ) %>%
+    config_padrao()
+}
+```
+
+```{=html}
+<script>
+/* tema escuro/claro: guarda a escolha no navegador e avisa o Shiny para redesenhar os gráficos */
+(function () {
+  /* modo claro por padrão; se a pessoa já escolheu um tema, ele fica guardado no navegador */
+  function lerTema() { try { return localStorage.getItem('tema_painel') || 'claro'; } catch (e) { return 'claro'; } }
+  function aplicarTema(t) {
+    if (t === 'claro') document.documentElement.setAttribute('data-tema', 'claro');
+    else document.documentElement.removeAttribute('data-tema');
+    try { localStorage.setItem('tema_painel', t); } catch (e) {}
+    document.querySelectorAll('.tema-botoes button').forEach(function (b) {
+      b.classList.toggle('ativo', b.getAttribute('data-escolha') === t);
+    });
+    try { if (window.Shiny && Shiny.setInputValue) Shiny.setInputValue('tema', t); } catch (e) {}
+  }
+  window.escolherTema = aplicarTema;
+  aplicarTema(lerTema());
+  document.addEventListener('DOMContentLoaded', function () { aplicarTema(lerTema()); });
+  $(document).on('shiny:connected', function () { aplicarTema(lerTema()); });
+})();
+
+/* título da barra superior em duas linhas: "Carteira de Investimento" / "Integrada - SACI" */
+(function () {
+  function quebrarTitulo() {
+    var marca = document.querySelector('.navbar-brand');
+    if (!marca || marca.querySelector('.titulo-linha')) return;
+    var no = Array.prototype.find.call(marca.childNodes, function (n) {
+      return n.nodeType === 3 && n.textContent.indexOf('Integrada') > -1;
+    });
+    if (!no) return;
+    var partes = no.textContent.trim().split(/\s+(?=Integrada)/);
+    var span = document.createElement('span');
+    span.className = 'titulo-linha';
+    span.innerHTML = partes[0] + '<br>' + (partes[1] || '');
+    marca.replaceChild(span, no);
+  }
+  quebrarTitulo();
+  $(quebrarTitulo);
+  $(document).on('shiny:connected', quebrarTitulo);
+})();
+
+/* botão de baixar imagem dos gráficos: gera o PNG com o título do gráfico, os filtros
+   aplicados (os mesmos chips de "Filtros ativos") e a data da carga, sem mexer no gráfico da tela */
+(function () {
+  function textoDe(el) { return el ? el.innerText.replace(/\s*×\s*$/, '').trim() : ''; }
+
+  function tituloDoGrafico(gd) {
+    var partes = [];
+    var card = gd.closest('.chart-wrapper');
+    var t = card && card.querySelector('.chart-title');
+    if (textoDe(t)) partes.push(textoDe(t));
+    var grupo = gd.closest('.nav-tabs-custom');                 // linha com abas (ex.: Valor por UF)
+    if (grupo) partes.push(textoDe(grupo.querySelector('.nav-tabs > li.active > a')));
+    var abas = gd.closest('.abas-grafico');                     // abas dentro do card (Valor | Quantidade)
+    if (abas) partes.push(textoDe(abas.querySelector('.nav-tabs > li.active > a')));
+    return partes.filter(Boolean).join(' – ') || 'Gráfico';
+  }
+
+  // quebra o texto dos filtros em linhas de até n caracteres, sem cortar um filtro no meio
+  function quebrarLinhas(itens, n) {
+    var linhas = [], atual = '';
+    itens.forEach(function (it) {
+      var proximo = atual ? atual + '  |  ' + it : it;
+      if (atual && proximo.length > n) { linhas.push(atual); atual = it; } else { atual = proximo; }
+    });
+    if (atual) linhas.push(atual);
+    return linhas;
+  }
+
+  window.baixarGraficoComFiltros = function (gd) {
+    var css = getComputedStyle(document.documentElement);
+    var corTitulo = css.getPropertyValue('--title').trim() || '#0a0a0a';
+    var corMuted  = css.getPropertyValue('--text-muted').trim() || '#737373';
+    var fundo     = css.getPropertyValue('--bg-elevated').trim() || '#ffffff';
+
+    var titulo  = tituloDoGrafico(gd);
+    var filtros = Array.prototype.map.call(document.querySelectorAll('.filtros-ativos .filtro-chip'), textoDe);
+    var linhas  = quebrarLinhas(filtros.length ? filtros : ['Nenhum filtro'], 110);
+    linhas[0] = 'Filtros: ' + linhas[0];
+    var dataCarga = textoDe(document.querySelector('.sidebar-rodape'));
+
+    var texto = '<b>' + titulo + '</b>' +
+      '<br><span style="font-size:11px;color:' + corMuted + '">' + linhas.join('<br>') +
+      (dataCarga ? '<br>' + dataCarga : '') + '</span>';
+    var topo = 34 + 15 * (linhas.length + (dataCarga ? 1 : 0));
+
+    var w = gd._fullLayout.width, h = gd._fullLayout.height;
+    var lay = JSON.parse(JSON.stringify(gd.layout));
+    lay.width = w; lay.height = h + topo;
+    lay.margin = Object.assign({ l: 80, r: 80, t: 100, b: 80 }, lay.margin || {});
+    lay.margin.t = (lay.margin.t || 0) + topo;
+    lay.paper_bgcolor = fundo; lay.plot_bgcolor = fundo;
+    lay.title = { text: texto, x: 0.01, xanchor: 'left', y: 1, yanchor: 'top', yref: 'container', pad: { t: 12 },
+                  font: { size: 14, color: corTitulo, family: 'Inter, Segoe UI, sans-serif' } };
+
+    var div = document.createElement('div');
+    div.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + w + 'px;height:' + (h + topo) + 'px;';
+    document.body.appendChild(div);
+    var limpar = function () { try { Plotly.purge(div); } catch (e) {} div.remove(); };
+    var nome = titulo.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w]+/g, '_').replace(/^_|_$/g, '').toLowerCase();
+
+    Plotly.newPlot(div, JSON.parse(JSON.stringify(gd.data)), lay, { staticPlot: true })
+      .then(function () { return Plotly.downloadImage(div, { format: 'png', filename: nome, width: w, height: h + topo, scale: 2 }); })
+      .then(limpar, function (e) { limpar(); console.error(e); });
+  };
+})();
+</script>
+```
+
+```{r dados, include=FALSE}
+# ------------------------------------------------------------------
+# BASE DE DADOS
+# ------------------------------------------------------------------
+conexao <- dbConnect(odbc::odbc(),database = "corporativo","PostgreSQLCampinas",timeout = 10)
+tci <- dbGetQuery(conexao,"SELECT * FROM se_saci.view_mat_carteira_investimento WHERE bln_carteira_ativa_mcid = 'SIM'")
+
+# ------------------------------------------------------------------
+
+max_ano <- max(tci$num_ano_instrumento, na.rm = TRUE)
+min_ano <- min(tci$num_ano_instrumento, na.rm = TRUE)
+
+# data da última carga, mostrada no rodapé da barra lateral
+data_carga <- tryCatch(
+  format(as.Date(max(tci$dte_carga, na.rm = TRUE)), "%d/%m/%Y"),
+  error = function(e) as.character(max(tci$dte_carga, na.rm = TRUE))
+)
+
+opcoes <- function(x) c("Todas", sort(unique(x)))
+
+# totais da carteira inteira, para comparar com o recorte filtrado
+total_contratos_carteira <- nrow(tci)
+```
+
+# Carteira ativa
+
+## Inputs {.sidebar data-width=300}
+
+```{r filtros}
+tags$div(class = "sidebar-titulo", "Filtros")
+
+selectInput("f_regiao", label = "Região:",
+            choices = opcoes(tci$txt_regiao),
+            selected = "Todas"
+            )
+
+selectInput("f_uf", label = "UF:",
+            choices = opcoes(tci$txt_uf),
+            selected = "Todas"
+            )
+
+selectInput("f_carteira_andamento", label = "Carteira Andamento MCID",
+            choices = opcoes(tci$bln_carteira_andamento),
+            selected =  "Todas"
+              )
+
+selectInput("f_fonte", label = "Fonte de recurso:",
+            choices = opcoes(tci$dsc_sub_fonte),
+            selected = "Todas"
+              )
+
+selectInput("f_tipo_instrumento", label = "Tipo do instrumento:",
+            choices = opcoes(tci$txt_tipo_instrumento),
+            selected = "Todas"
+              )
+
+selectInput("f_bln_pac", label = "PAC?:",
+            choices = opcoes(tci$bln_pac),
+            selected = "Todas"
+              )
+
+selectInput("f_tipo_pac", label = "Tipo/Fase PAC:",
+            choices = opcoes(tci$dsc_fase_pac),
+            selected = "Todas"
+              )
+
+selectInput("f_secretaria", label = "Secretaria:",
+            choices = opcoes(tci$txt_sigla_secretaria),
+            selected = "Todas"
+              )
+
+selectInput("f_tipo_tomador", label = "Tipo tomador:",
+            choices = opcoes(tci$txt_tipo_tomador),
+            selected = "Todas"
+              )
+
+#sliderInput("f_ano", label = "Ano de assinatura:",
+#            min = min_ano, max = max_ano,
+#            value = c(min_ano, max_ano), sep = "", step = 1)
+
+selectInput("f_situacao_contrato", label = "Situação do contrato:",
+                    choices = opcoes(tci$dsc_situacao_contrato_mcid),
+                    selected = "Todas"
+            )
+
+selectInput("f_situacao_objeto", label = "Situação do objeto_obra:",
+                    choices = opcoes(tci$dsc_situacao_objeto_mcid),
+                    selected = "Todas"
+            )
+
+actionButton("limpar_filtros", "Limpar filtros", icon = icon("eraser"), class = "btn-limpar")
+
+tags$div(class = "sidebar-rodape", paste("Dados atualizados em", data_carga))
+
+tags$div(class = "tema-botoes",
+  tags$button(type = "button", `data-escolha` = "escuro", onclick = "escolherTema('escuro')", "🌙 Escuro"),
+  tags$button(type = "button", `data-escolha` = "claro",  onclick = "escolherTema('claro')",  "☀️ Claro")
+)
+```
+
+```{r base_reativa}
+filtros <- c("f_regiao", "f_uf", "f_carteira_andamento", "f_fonte", "f_tipo_instrumento",
+             "f_bln_pac", "f_tipo_pac", "f_secretaria", "f_tipo_tomador",
+             "f_situacao_contrato", "f_situacao_objeto")
+
+# nomes dos filtros na lista "Filtros ativos" (acima dos totalizadores)
+rotulos_filtros <- c(
+  f_regiao = "Região", f_uf = "UF", f_carteira_andamento = "Carteira Andamento MCID",
+  f_fonte = "Fonte de recurso", f_tipo_instrumento = "Tipo do instrumento",
+  f_bln_pac = "PAC", f_tipo_pac = "Tipo/Fase PAC", f_secretaria = "Secretaria",
+  f_tipo_tomador = "Tipo tomador", f_situacao_contrato = "Situação do contrato",
+  f_situacao_objeto = "Situação do objeto"
+)
+
+# botão "Limpar filtros": volta todos os campos para "Todas"
+observeEvent(input$limpar_filtros, {
+  for (f in filtros) updateSelectInput(inputId = f, selected = "Todas")
+})
+
+# "×" de um filtro na lista "Filtros ativos": volta só aquele campo para "Todas"
+observeEvent(input$remover_filtro, {
+  if (input$remover_filtro %in% filtros) updateSelectInput(inputId = input$remover_filtro, selected = "Todas")
+})
+
+# ao escolher uma região, a lista de UF mostra só as UFs dela
+observeEvent(input$f_regiao, {
+  ufs <- if (input$f_regiao == "Todas") tci$txt_uf else tci$txt_uf[tci$txt_regiao %in% input$f_regiao]
+  manter <- if (isolate(input$f_uf) %in% ufs) isolate(input$f_uf) else "Todas"
+  updateSelectInput(inputId = "f_uf", choices = opcoes(ufs), selected = manter)
+}, ignoreInit = TRUE)
+
+# tema escolhido na barra lateral (claro por padrão)
+tema <- reactive(if (is.null(input$tema)) "claro" else input$tema)
+
+# base_filtrada() é reativa: recalcula sempre que um filtro muda
+base_filtrada <- reactive({
+  df <- tci
+
+  if (input$f_regiao != "Todas") {
+    df <- filter(df, txt_regiao == input$f_regiao)
+  }
+  if (input$f_uf != "Todas") {
+    df <- filter(df, txt_uf == input$f_uf)
+  }
+
+  if (input$f_carteira_andamento != "Todas") {
+    df <- filter(df, bln_carteira_andamento == input$f_carteira_andamento)
+  }
+  if (input$f_fonte != "Todas") {
+    df <- filter(df, dsc_sub_fonte == input$f_fonte)
+  }
+  if (input$f_situacao_contrato != "Todas") {
+    df <- filter(df, dsc_situacao_contrato_mcid == input$f_situacao_contrato)
+  }
+  if (input$f_situacao_objeto != "Todas") {
+    df <- filter(df, dsc_situacao_objeto_mcid == input$f_situacao_objeto)
+  }
+
+  if (input$f_tipo_instrumento != "Todas") {
+    df <- filter(df, txt_tipo_instrumento == input$f_tipo_instrumento)
+  }
+  if (input$f_bln_pac != "Todas") {
+    df <- filter(df, bln_pac == input$f_bln_pac)
+  }
+  if (input$f_tipo_pac != "Todas") {
+    df <- filter(df, dsc_fase_pac == input$f_tipo_pac)
+  }
+  if (input$f_secretaria != "Todas") {
+   df <- filter(df, txt_sigla_secretaria == input$f_secretaria)
+  }
+  if (input$f_tipo_tomador != "Todas") {
+   df <- filter(df, txt_tipo_tomador == input$f_tipo_tomador)
+  }
+
+  df
+})
+
+# agregações usadas nos gráficos: valor (repasse) e quantidade por categoria
+resumo <- function(df, categoria) {
+  df %>%
+    group_by(.data[[categoria]]) %>%
+    summarise(valor = sum(vlr_repasse, na.rm = TRUE),
+              qtd   = n_distinct(cod_tci), .groups = "drop")
+}
+```
+
+## Row {data-height="240"}
+
+### Totalizadores
+
+```{r}
+# totalizadores no padrão do SACI: total geral e a divisão por fonte (OGU / FIN)
+renderUI({
+  df  <- base_filtrada()
+  ogu <- df[df$txt_fonte %in% "OGU", ]
+  fin <- df[df$txt_fonte %in% "FIN", ]
+
+  soma  <- function(d, col) sum(d[[col]], na.rm = TRUE)
+  com_valor <- function(d, col) sum(d[[col]] > 0, na.rm = TRUE)   # contratos com valor > 0
+  n_mun <- function(d) n_distinct(d$id_municipio, na.rm = TRUE)   # como no SACI: id_municipio sem nulos
+  bi    <- function(v) fmt_reais_curto(v, 0.01)
+  pct   <- function(v, base) if (base > 0) tags$span(class = "tot-pct", paste0("(", fmt_pct(v / base), ")"))
+
+  # uma linha OGU/FIN: valor em negrito, % opcional e nº de contratos embaixo
+  linha <- function(fonte, valor, pct = NULL, n = NULL) {
+    tags$div(class = "tot-linha",
+      tags$span(class = paste0("tot-tag tag-", tolower(fonte)), fonte),
+      tags$div(tags$b(valor), pct,
+               if (!is.null(n)) tags$div(class = "tot-sub", paste0(fmt_num(n), " contrato(s)"))))
+  }
+  card <- function(titulo, valor, pct_total = NULL, l_ogu, l_fin) {
+    tags$div(class = "tot-card",
+      tags$div(class = "tot-titulo", titulo),
+      tags$div(class = "tot-valor", valor, pct_total),
+      tags$div(class = "tot-linhas", l_ogu, l_fin))
+  }
+  valor_fonte <- function(titulo, col) {
+    card(titulo, bi(soma(df, col)),
+         l_ogu = linha("OGU", bi(soma(ogu, col)), n = com_valor(ogu, col)),
+         l_fin = linha("FIN", bi(soma(fin, col)), n = com_valor(fin, col)))
+  }
+
+  rep_total <- soma(df, "vlr_repasse")
+  rep_ogu   <- soma(ogu, "vlr_repasse")
+  rep_fin   <- soma(fin, "vlr_repasse")
+  # executado: no FIN é o valor desembolsado; no OGU (e em qualquer outra fonte ou
+  # sem fonte), o valor desbloqueado — mesma regra do TotalizadoresContratos do SACI
+  exec_ogu   <- soma(ogu, "vlr_desbloqueado")
+  exec_fin   <- soma(fin, "vlr_desembolsado")
+  exec_total <- exec_fin + soma(df[!(df$txt_fonte %in% "FIN"), ], "vlr_desbloqueado")
+
+  # lista "Filtros ativos" (como no SACI): a carteira ativa vem fixa da consulta ao banco;
+  # os demais aparecem quando escolhidos e têm um "×" para remover só aquele filtro
+  ativos <- Filter(function(f) !is.null(input[[f]]) && input[[f]] != "Todas", filtros)
+  chips <- lapply(ativos, function(f) {
+    tags$span(class = "filtro-chip", paste0(rotulos_filtros[[f]], ": ", input[[f]]),
+      tags$a(class = "filtro-remover", href = "#", title = "Remover este filtro",
+             onclick = sprintf("Shiny.setInputValue('remover_filtro', '%s', {priority: 'event'}); return false;", f),
+             "×"))
+  })
+
+  tagList(
+  tags$div(class = "filtros-ativos",
+    tags$span(class = "filtros-ativos-rotulo", "Filtros ativos:"),
+    tags$span(class = "filtro-chip fixo", "Carteira MCID Ativa: Sim"),
+    chips
+  ),
+
+  tags$div(class = "totalizadores",
+    card("Qtd. instrumentos", fmt_num(nrow(df)),
+         l_ogu = linha("OGU", fmt_num(nrow(ogu))),
+         l_fin = linha("FIN", fmt_num(nrow(fin)))),
+
+    valor_fonte("Investimento", "vlr_investimento"),
+    valor_fonte("Repasse", "vlr_repasse"),
+
+    card("Empenhado", bi(soma(df, "vlr_empenhado")),
+         l_ogu = linha("OGU", bi(soma(ogu, "vlr_empenhado")),
+                       pct(soma(ogu, "vlr_empenhado"), rep_ogu), com_valor(ogu, "vlr_empenhado")),
+         l_fin = tags$div(class = "tot-linha", tags$span(class = "tot-tag tag-fin", "FIN"),
+                          tags$i(class = "tot-na", "Não se aplica"))),
+
+    card("Desembolsado", bi(soma(df, "vlr_desembolsado")), pct(soma(df, "vlr_desembolsado"), rep_total),
+         l_ogu = linha("OGU", bi(soma(ogu, "vlr_desembolsado")),
+                       pct(soma(ogu, "vlr_desembolsado"), rep_ogu), com_valor(ogu, "vlr_desembolsado")),
+         l_fin = linha("FIN", bi(soma(fin, "vlr_desembolsado")),
+                       pct(soma(fin, "vlr_desembolsado"), rep_fin), com_valor(fin, "vlr_desembolsado"))),
+
+    card("Executado", bi(exec_total), pct(exec_total, rep_total),
+         l_ogu = linha("OGU", bi(exec_ogu), pct(exec_ogu, rep_ogu), com_valor(ogu, "vlr_desbloqueado")),
+         l_fin = linha("FIN", bi(exec_fin), pct(exec_fin, rep_fin), com_valor(fin, "vlr_desembolsado"))),
+
+    card("Municípios principais", fmt_num(n_mun(df)),
+         l_ogu = linha("OGU", fmt_num(n_mun(ogu))),
+         l_fin = linha("FIN", fmt_num(n_mun(fin))))
+  )
+  )
+})
+```
+
+## Row {data-height="470"}
+
+### Situação do contrato
+
+```{r}
+output$g_contrato_valor <- renderPlotly({
+  base_filtrada() %>%
+    resumo("dsc_situacao_contrato_mcid") %>%
+    grafico_barras("dsc_situacao_contrato_mcid", "valor", tema(), altura = 400)   # mesma altura da área da aba
+})
+output$g_contrato_qtd <- renderPlotly({
+  base_filtrada() %>%
+    resumo("dsc_situacao_contrato_mcid") %>%
+    grafico_barras("dsc_situacao_contrato_mcid", "qtd", tema(), altura = 400)
+})
+
+# abas Valor | Quantidade dentro do mesmo card
+tags$div(class = "abas-grafico",
+  tabsetPanel(
+    tabPanel("Valor",      plotlyOutput("g_contrato_valor", height = "400px", fill = FALSE)),
+    tabPanel("Quantidade", plotlyOutput("g_contrato_qtd",   height = "400px", fill = FALSE))
+  )
+)
+```
+
+### Situação do objeto
+
+```{r}
+output$g_objeto_valor <- renderPlotly({
+  base_filtrada() %>%
+    resumo("dsc_situacao_objeto_mcid") %>%
+    grafico_barras("dsc_situacao_objeto_mcid", "valor", tema(), altura = 400)
+})
+output$g_objeto_qtd <- renderPlotly({
+  base_filtrada() %>%
+    resumo("dsc_situacao_objeto_mcid") %>%
+    grafico_barras("dsc_situacao_objeto_mcid", "qtd", tema(), altura = 400)
+})
+
+tags$div(class = "abas-grafico",
+  tabsetPanel(
+    tabPanel("Valor",      plotlyOutput("g_objeto_valor", height = "400px", fill = FALSE)),
+    tabPanel("Quantidade", plotlyOutput("g_objeto_qtd",   height = "400px", fill = FALSE))
+  )
+)
+```
+
+## Row {.tabset data-height="600"}
+
+### Valor por UF
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_uf") %>%
+    grafico_barras("txt_uf", "valor", tema())
+})
+```
+
+### Quantidade por UF
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_uf") %>%
+    grafico_barras("txt_uf", "qtd", tema())
+})
+```
+
+### Valor por região
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_regiao") %>%
+    arrange(desc(valor)) %>%
+    grafico_rosca("txt_regiao", "valor", tema())
+})
+```
+
+### Quantidade por região
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_regiao") %>%
+    arrange(desc(qtd)) %>%
+    grafico_rosca("txt_regiao", "qtd", tema())
+})
+```
+
+## Row {.tabset data-height="430"}
+
+### Por tipo de instrumento (valor)
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_tipo_instrumento") %>%
+    grafico_barras("txt_tipo_instrumento", "valor", tema())
+})
+```
+
+### Por tipo de instrumento (quantidade)
+
+```{r}
+renderPlotly({
+  base_filtrada() %>%
+    resumo("txt_tipo_instrumento") %>%
+    grafico_barras("txt_tipo_instrumento", "qtd", tema())
+})
+```
+
+## Row {data-height="900"}
+
+### Tabela de contratos filtrados
+
+```{r}
+# dados da tabela (mesma ordem na tela e na exportação); txt_link vira o link do cod_tci
+tabela_dados <- reactive({
+  base_filtrada() %>%
+    select(cod_tci, txt_link, num_convenio, cod_operacao, cod_ag_financeiro,
+           txt_regiao, txt_uf, txt_municipio,
+           txt_tipo_instrumento, txt_fonte, dsc_sub_fonte,
+           txt_sigla_secretaria, txt_tomador, txt_tipo_tomador,
+           dsc_situacao_contrato_mcid, dsc_situacao_objeto_mcid,
+           dte_assinatura_contrato, num_ano_instrumento,
+           vlr_investimento, vlr_repasse, vlr_contrapartida,
+           dsc_objeto_instrumento,
+           dte_carga) %>%
+    arrange(desc(vlr_investimento))
+})
+
+nomes_colunas <- c(
+  "cod_tci", "link_saci", "num_convenio", "cod_operacao", "cod_ag_financeiro",
+  "regiao", "estado", "municipio",
+  "tipo_instrumento", "fonte", "subfonte", "secretaria",
+  "tomador", "tipo_tomador",
+  "situacao_contrato_mcid", "situacao_objeto_mcid",
+  "data_assinatura", "ano_instrumento",
+  "vlr_investimento", "vlr_repasse", "vlr_contrapartida",
+  "objeto_instrumento",
+  "dte_carga"
+)
+
+output$tabela_contratos <- DT::renderDataTable({
+  tabela_dados() %>%
+    DT::datatable(
+      extensions = "Buttons",
+      class      = "cell-border stripe hover compact",
+      filter     = "top",
+      rownames   = FALSE,
+      colnames   = nomes_colunas,
+      options = list(
+        dom = "Bfrtip",
+        buttons = list(
+          # Copiar: só os contratos da página que está na tela
+          list(extend = "copy", text = "Copiar",
+               exportOptions = list(columns = ":visible", modifier = list(page = "current"))),
+          # CSV e Excel: todos os contratos filtrados, gerados no servidor (downloads abaixo)
+          list(extend = "csv",   text = "CSV",   action = DT::JS("function () { document.getElementById('baixar_csv').click(); }")),
+          list(extend = "excel", text = "Excel", action = DT::JS("function () { document.getElementById('baixar_excel').click(); }"))
+          ),
+        pageLength = 50,
+        scrollX    = TRUE,
+        autoWidth  = TRUE,
+        columnDefs = list(
+          list(targets = "_all",
+               className = "dt-left"),
+          # link_saci fica escondido; o cod_tci vira link para o contrato no SACI
+          list(targets = 1, visible = FALSE),
+          list(targets = 0, render = DT::JS(
+            "function (data, type, row) {",
+            "  if (type !== 'display' || !row[1]) return data;",
+            "  return '<a href=\"' + row[1] + '\" target=\"_blank\" rel=\"noopener\" title=\"Abrir o contrato no SACI\">' + data + '</a>';",
+            "}"))
+        ),
+        language = list(
+          url = "//cdn.datatables.net/plug-ins/1.13.4/i18n/pt-BR.json"
+        )
+      )
+    ) %>%
+    htmlwidgets::onRender("
+    function(el){
+   $(el).find('table').css('white-space','nowrap');
+   $('thead input').each(function(){
+      $(this).wrap('<div class=\"dt-filter\"></div>');
+      $(this).after('<span class=\"clear-filter\">✕</span>');
+   });
+   $('.clear-filter').click(function(){
+      var input=$(this).prev('input');
+      input.val('');
+      input.trigger('keyup');
+   });
+   }
+   ") %>%
+    DT::formatCurrency(
+      c("vlr_investimento", "vlr_repasse", "vlr_contrapartida"),
+      currency = "R$ ", mark = ".", dec.mark = ",", digits = 2
+    )
+})
+
+# exportação: todos os contratos dos filtros da barra lateral e também da busca e dos
+# filtros da própria tabela (input$..._rows_all), não só a página visível
+dados_exportacao <- function() {
+  df <- tabela_dados()
+  linhas <- input$tabela_contratos_rows_all
+  if (!is.null(linhas)) df <- df[linhas, , drop = FALSE]
+  names(df) <- nomes_colunas
+  df
+}
+nome_arquivo <- function(ext) paste0("carteira_investimento_saci_", format(Sys.Date(), "%Y%m%d"), ".", ext)
+
+output$baixar_csv <- downloadHandler(
+  filename = function() nome_arquivo("csv"),
+  content  = function(file) readr::write_excel_csv2(dados_exportacao(), file, na = "")   # ; e vírgula decimal, abre direto no Excel
+)
+output$baixar_excel <- downloadHandler(
+  filename = function() nome_arquivo("xlsx"),
+  content  = function(file) writexl::write_xlsx(dados_exportacao(), file)
+)
+# os links de download ficam escondidos (são acionados pelos botões CSV/Excel da tabela);
+# sem isto o Shiny não prepara links escondidos e o download não funciona
+outputOptions(output, "baixar_csv",   suspendWhenHidden = FALSE)
+outputOptions(output, "baixar_excel", suspendWhenHidden = FALSE)
+
+tagList(
+  DT::dataTableOutput("tabela_contratos"),
+  tags$div(style = "display: none;",
+           downloadLink("baixar_csv", "CSV"),
+           downloadLink("baixar_excel", "Excel"))
+)
+```
+
+<!-- ABA 2 retirada por enquanto; para reativar, troque esta linha por:  # ABA 2 -->
