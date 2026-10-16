@@ -4,6 +4,7 @@ Painel interativo da carteira de investimentos do Ministério das Cidades (MCID)
 `flexdashboard` + `shiny`, no padrão visual do sistema SACI.
 
 **Página do projeto:** https://brunotiburcio-git.github.io/painel-carteira-saci/
+**Painel online:** https://connect.posit.cloud/brunotiburcio/content/01a14529-004c-3a4d-bcab-bd1566e50107
 
 ![Painel no modo claro](docs/img/painel-claro.png)
 
